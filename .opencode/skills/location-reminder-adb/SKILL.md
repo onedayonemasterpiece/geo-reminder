@@ -1,0 +1,127 @@
+---
+name: location-reminder-adb
+description: Build, provision, validate, inspect, and physically test the local Android geofence reminder app over wired ADB using only a finite verified list of circular zones and its persistent audit journal.
+---
+
+# Location Reminder ADB
+
+Use this skill when the user asks to convert natural-language location reminders
+into local Android rules, install/update the prototype, inspect configured
+reminders, diagnose a missed notification, or run the Samsung S21 Ultra test.
+
+## Read first
+
+- [Rule contract](./references/rule-contract.md)
+- [Device workflow](./references/device-workflow.md)
+- [`docs/JOURNAL_AND_DEBUGGING.md`](../../../docs/JOURNAL_AND_DEBUGGING.md)
+- [Test record](./templates/test-record.md)
+
+## Fixed MVP boundary
+
+- USB ADB is temporary provisioning and diagnostics, not an operational runtime.
+- Runtime is Google Play services geofencing plus local Android notifications.
+- Do not introduce server/MCP transport, FCM, polling, continuous location,
+  foreground service, account, cloud storage or PWA.
+- Accept only a finite user-approved list of concrete places.
+- Every zone is a circle; no silent polygon approximation or category expansion.
+- Never exceed 100 active circles.
+- Preserve the persistent journal and never report `ACTIVE_CONFIRMED` as proof
+  that a human saw or heard the notification.
+
+## Workflow
+
+### 1. Establish device and source state
+
+Check branch/commit and CI first. Run `adb devices -l`. Continue with mutations
+only when exactly one device is authorized, or `DEVICE_SERIAL` is explicit.
+Confirm the intended Samsung S21 Ultra. Never enable wireless ADB or run root.
+
+### 2. Normalize the reminder
+
+Create a deterministic rule with stable rule ID, title/message, transition,
+repeat mode, cooldown/active window and explicitly enumerated places. Reject or
+narrow open categories such as “any supermarket”.
+
+### 3. Resolve concrete places
+
+For every place provide stable zone ID, label, latitude, longitude, radius and a
+short provenance note. Do not guess. If ambiguous, keep the rule disabled. For a
+normal outdoor urban point, start around 120–180 m and tune from observations.
+
+### 4. Generate and validate
+
+Copy `config/rules.example.json` to `config/rules.local.json`; run:
+
+```bash
+python3 scripts/validate-rules.py config/rules.local.json
+```
+
+Preserve rule IDs when completion/cooldown state should survive edits. Use a new
+ID, or an explicit reset command, only when the user intends a new reminder.
+
+### 5. Build, install and grant permissions
+
+```bash
+./scripts/build-debug.sh
+./scripts/install-debug.sh
+```
+
+The user grants precise location, background location “Allow all the time”, and
+notifications through Android UI. Never bypass this.
+
+### 6. Import and visually verify current state
+
+```bash
+./scripts/import-rules.sh config/rules.local.json
+./scripts/diagnose.sh
+```
+
+On the phone, verify every rule, zone label, coordinate, radius, repeat mode and
+latest import/registration status. The app is read-only by design.
+
+### 7. Test notification plumbing
+
+```bash
+./scripts/test-notification.sh [rule-id]
+./scripts/export-journal.sh
+```
+
+Require a journal row for the attempt and inspect `FAILED`,
+`POSTED_UNCONFIRMED`, or `ACTIVE_CONFIRMED`. This is not a geofence test.
+
+### 8. Run a physical boundary test
+
+```bash
+./scripts/mark-observation.sh "outside zone; physical test started"
+```
+
+Disconnect USB, start clearly outside the circle, cross the boundary and record
+real times. Registration disables initial triggers, so provisioning must not
+simulate an entry. Reconnect only after the observation window and export JSONL.
+
+Diagnose by the first missing stage:
+
+- no `GEOFENCE_EVENT_RECEIVED`: event never reached app code;
+- `REMINDER_TRIGGER_SKIPPED`: inspect exact reason;
+- notification `FAILED`: permission/channel path;
+- `ACTIVE_CONFIRMED`: ID existed in Android system UI;
+- `TAPPED`/`DISMISSED`: interaction observed;
+- `NO_LONGER_ACTIVE_UNKNOWN`: disappeared without observed interaction.
+
+### 9. Reboot and battery
+
+Verify boot re-registration separately. Start with Samsung `Optimized`; only
+after reproducible misses inspect Deep sleeping apps. Use batterystats scripts
+for a 3–7 day run and never keep ADB connected during the energy experiment.
+
+### 10. Report evidence
+
+Record exact app/OS/One UI versions, rule SHA, observation marker, expected and
+actual event chain, delay, false positive/miss, reboot result and battery data.
+Attach/export JSONL rather than summarizing from memory.
+
+## Model routing
+
+Use GPT-5.6 Sol/high for the first Android/Gradle/ADB integration and persistent
+platform faults. After stable installation, Terra medium/high is sufficient for
+routine finite-list rule generation, validation and import.

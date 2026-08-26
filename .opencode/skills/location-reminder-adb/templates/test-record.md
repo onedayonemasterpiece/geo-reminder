@@ -1,0 +1,24 @@
+# Geo Reminder test record
+
+- Date/time and timezone:
+- Repository commit / APK SHA-256:
+- Device model:
+- Android/API:
+- One UI:
+- Battery mode:
+- Rule file SHA-256:
+- Rule ID / zone ID:
+- Coordinates / radius / responsiveness:
+- Test type: notification plumbing / enter / exit / dwell / reboot / battery
+- Observation marker event ID and time:
+- Started outside zone: yes/no/not applicable
+- Expected event chain:
+- Actual event chain:
+- Notification delivery state/ID:
+- Boundary time / event time / notification time:
+- Delay:
+- False positive or miss:
+- Exported JSONL path/SHA-256:
+- Relevant audit event IDs:
+- Battery evidence period/result:
+- Decision and next isolated adjustment:
