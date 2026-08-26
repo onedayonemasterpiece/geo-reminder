@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Geo Reminder</string>
+    <string name="notification_channel_name">Геонапоминания</string>
+    <string name="notification_channel_description">Локальные уведомления при входе, выходе или нахождении в геозоне</string>
+</resources>
