@@ -5,10 +5,10 @@ on:
     branches:
       - main
       - "feat/**"
-  pull_request:
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: android-ci-${{ github.ref }}
@@ -21,22 +21,23 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ""
+          log-accepted-android-sdk-licenses: false
 
-      - name: Install Android platform
+      - name: Install required Android platform
         shell: bash
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
@@ -49,17 +50,58 @@ jobs:
       - name: Unit tests, lint, and debug APK
         run: gradle --no-daemon --stacktrace testDebugUnitTest lintDebug assembleDebug
 
-      - name: Create APK checksum
-        run: sha256sum app/build/outputs/apk/debug/app-debug.apk > app/build/outputs/apk/debug/app-debug.apk.sha256
+      - name: Prepare verified distribution
+        id: distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIST_DIR="build/distribution"
+          mkdir -p "$DIST_DIR"
+          cp app/build/outputs/apk/debug/app-debug.apk "$DIST_DIR/geo-reminder-debug.apk"
+          (
+            cd "$DIST_DIR"
+            sha256sum geo-reminder-debug.apk > geo-reminder-debug.apk.sha256
+          )
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf '{\n  "repository": "%s",\n  "commit": "%s",\n  "workflow_run_id": "%s",\n  "built_at": "%s",\n  "package": "com.onedayonemasterpiece.georeminder.debug",\n  "version": "0.1.0-debug"\n}\n' \
+            "$GITHUB_REPOSITORY" \
+            "$GITHUB_SHA" \
+            "$GITHUB_RUN_ID" \
+            "$BUILD_TIME" \
+            > "$DIST_DIR/build-info.json"
+          echo "tag=debug-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload debug APK
+      - name: Upload verified APK and reports
         uses: actions/upload-artifact@v4
         with:
           name: geo-reminder-debug-${{ github.sha }}
           path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/debug/app-debug.apk.sha256
+            build/distribution/
             app/build/reports/lint-results-debug.html
-            app/build/reports/tests/testDebugUnitTest/**
+            app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
+
+      - name: Publish immutable debug prerelease
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/android-geofence-audit-mvp-20260826'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.distribution.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSETS=(
+            build/distribution/geo-reminder-debug.apk
+            build/distribution/geo-reminder-debug.apk.sha256
+            build/distribution/build-info.json
+          )
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${ASSETS[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" "${ASSETS[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --prerelease \
+              --title "Geo Reminder debug ${GITHUB_SHA::12}" \
+              --notes "Verified debug APK built by GitHub Actions from commit $GITHUB_SHA. Includes SHA-256 and build metadata."
+          fi
