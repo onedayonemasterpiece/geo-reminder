@@ -8,6 +8,7 @@ build/
 .externalNativeBuild/
 .cxx/
 .tools/
+.local/
 config/rules.local.json
 *.apk
 *.aab

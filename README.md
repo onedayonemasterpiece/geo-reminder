@@ -6,27 +6,26 @@
 получает его по проводному ADB, регистрирует круговые геозоны и дальше работает
 автономно.
 
-## Что уже реализовано
+## Что реализовано
 
 - экран **«Напоминания»** со всеми текущими правилами, зонами, координатами,
-  режимом повторения и фактическим runtime-состоянием;
-- экран **«Журнал»** с историей импортов, регистраций, системных геособытий,
-  решений по правилу и доставок уведомлений;
-- экран **«Диагностика»** с разрешениями, состоянием канала уведомлений,
-  ограничениями фоновой работы, хешем правил и последней регистрацией;
+  режимом повторения и runtime-состоянием;
+- экран **«Журнал»** с историей импортов, регистраций, геособытий, решений по
+  правилу и доставок уведомлений;
+- экран **«Диагностика»** с разрешениями, состоянием notification channel,
+  ограничениями фоновой работы, SHA правил и последней регистрацией;
 - постоянная SQLite/WAL-база, сохраняющаяся после перезапуска процесса,
   перезагрузки телефона и обновления APK;
-- JSONL-экспорт полного журнала с телефона или по ADB;
-- отдельные состояния доставки: `ATTEMPTED`, `FAILED`,
-  `POSTED_UNCONFIRMED`, `ACTIVE_CONFIRMED`, `TAPPED`, `DISMISSED` и
+- JSONL-экспорт полного журнала;
+- состояния доставки `ATTEMPTED`, `FAILED`, `POSTED_UNCONFIRMED`,
+  `ACTIVE_CONFIRMED`, `TAPPED`, `DISMISSED` и
   `NO_LONGER_ACTIVE_UNKNOWN`;
-- запись одноразового `triggeringLocation` только при фактическом геособытии —
-  непрерывной истории перемещений нет;
 - восстановление геозон после перезагрузки;
 - debug-only ADB-команды импорта, тестового уведомления, диагностики,
   перерегистрации, контрольной отметки и экспорта;
-- строгий локальный и Android-валидатор `rules.json`;
-- GitHub Actions: unit tests, Android lint, debug APK и SHA-256 как artifact.
+- строгий Python/Android validator `rules.json`;
+- один GitHub Actions workflow для tests, lint, APK, SHA-256, artifact и debug
+  prerelease.
 
 ## Что означает журнал доставки
 
@@ -36,17 +35,15 @@
 2. `REMINDER_TRIGGER_ACCEPTED` или `...SKIPPED` — локальное правило принято либо
    отклонено с причиной.
 3. `NOTIFICATION_ATTEMPT` — приложение начало доставку.
-4. `ACTIVE_CONFIRMED` — `notify()` завершился и ID найден в
+4. `ACTIVE_CONFIRMED` — ID найден в
    `NotificationManager.activeNotifications`.
 5. `TAPPED` или `DISMISSED` — зафиксировано действие с уведомлением.
-6. `NO_LONGER_ACTIVE_UNKNOWN` — ранее активное уведомление исчезло, но приложение
-   не получило надёжного события нажатия или смахивания.
+6. `NO_LONGER_ACTIVE_UNKNOWN` — уведомление исчезло без надёжно наблюдаемого
+   нажатия или смахивания.
 
 `ACTIVE_CONFIRMED` подтверждает наличие уведомления в системном списке Android,
-но не может доказать, что человек физически заметил баннер или услышал звук.
-Именно поэтому эти состояния не объединены.
-
-Подробная интерпретация: `docs/JOURNAL_AND_DEBUGGING.md`.
+но не доказывает, что человек заметил баннер или услышал звук. Подробная
+интерпретация: `docs/JOURNAL_AND_DEBUGGING.md`.
 
 ## Граница MVP
 
@@ -59,30 +56,71 @@ ADB нужен при установке, обновлении правил и �
 отключения USB срабатывание выполняется Android Geofencing API и локальным
 уведомлением; OpenCode и компьютер не нужны.
 
-## Сборка
+## Готовый APK
 
-### GitHub Actions
+GitHub Actions является build authority. Устанавливать JDK, Gradle, Android SDK
+или Android Studio на локальный компьютер для обычного развёртывания не нужно.
 
-Workflow `.github/workflows/android-ci.yml` собирает debug APK на каждом push в
-`main`/`feat/**` и в pull request. Artifact содержит:
+Текущий проверенный prerelease:
 
-- `app-debug.apk`;
-- `app-debug.apk.sha256`;
-- lint report;
-- unit-test report.
+```text
+tag: debug-afa51c3a001c
+app commit: afa51c3a001cff878f896914004878b8dab77e3b
+package: com.onedayonemasterpiece.georeminder.debug
+version: 0.1.0-debug
+SHA-256: 048f1adeab7a868dd4aa805d1f886d109161d316591812c1534f7596e62ada2e
+```
 
-### Локально
+Каждый успешный implementation build публикует стабильные assets:
 
-Требуются JDK 17, Android SDK 36, build-tools 36.0.0, Python 3 и ADB.
+- `geo-reminder-debug.apk`;
+- `geo-reminder-debug.apk.sha256`;
+- `build-info.json`.
+
+## Установка на телефон
+
+Локально нужны только Git/GitHub CLI, ADB platform-tools и подключённый телефон.
+Скрипты сами выбирают последний non-draft debug prerelease, скачивают assets,
+проверяют SHA-256 и выполняют `adb install -r`. Они не удаляют приложение и не
+очищают журнал.
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-latest-release.ps1
+```
+
+Bash/Git Bash/WSL:
 
 ```bash
-./scripts/build-debug.sh
 ./scripts/install-debug.sh
 ```
 
-Если `gradlew` ещё не создан, `scripts/gradle.sh` скачает официальный Gradle
-8.13 и проверит SHA-256 архива перед запуском. `scripts/bootstrap-gradle.sh`
-может дополнительно создать обычный wrapper.
+Также можно передать Bash-скрипту явный APK, рядом с которым лежит файл
+`<apk>.sha256`:
+
+```bash
+./scripts/install-debug.sh /path/to/geo-reminder-debug.apk
+```
+
+После установки пользователь вручную выдаёт:
+
+1. точную геолокацию;
+2. доступ к местоположению **«Разрешить всегда»**;
+3. разрешение уведомлений.
+
+Начинать тест следует в стандартном Samsung-режиме батареи `Optimized`.
+
+## Проверка до реальных геозон
+
+```bash
+./scripts/test-notification.sh
+./scripts/diagnose.sh
+./scripts/export-journal.sh
+```
+
+Нужно увидеть попытку уведомления и её результат в постоянном журнале. Это
+проверка notification plumbing, а не физический geofence test.
 
 ## Подготовка правил в OpenCode
 
@@ -93,36 +131,24 @@ python3 scripts/validate-rules.py config/rules.local.json
 ./scripts/import-rules.sh config/rules.local.json
 ```
 
-Пример намеренно содержит только `enabled: false`: случайный импорт не должен
-создать активные геозоны. Канонический контракт находится в
+Пример содержит только `enabled: false`: случайный импорт не должен создать
+активные геозоны. Канонический контракт находится в
 `config/rules.schema.json` и
 `.opencode/skills/location-reminder-adb/references/rule-contract.md`.
 
-## Разрешения на Samsung
-
-После установки пользователь вручную выдаёт:
-
-1. точную геолокацию;
-2. доступ к местоположению **«Разрешить всегда»** через системные настройки;
-3. разрешение на уведомления.
-
-Начинать тест следует в стандартном Samsung-режиме батареи `Optimized`. Только
-после подтверждённых пропусков проверяется `Deep sleeping apps`; постоянный
-foreground service не добавляется.
-
-## Диагностика и журнал
+## Физическая проверка
 
 ```bash
-./scripts/test-notification.sh [rule-id]
 ./scripts/mark-observation.sh "вышел из тестовой зоны"
-./scripts/reregister.sh
+```
+
+Отключите USB, начните явно снаружи круга, пересеките границу и запишите реальное
+время. Затем подключитесь снова и выполните:
+
+```bash
 ./scripts/diagnose.sh
 ./scripts/export-journal.sh
 ```
-
-Физический тест начинается явно снаружи круга. При регистрации задан
-`setInitialTrigger(0)`, поэтому само добавление зоны не должно имитировать
-реальный вход.
 
 Если напоминание не появилось:
 
@@ -130,8 +156,8 @@ foreground service не добавляется.
 - событие есть, но присутствует `...SKIPPED` — причина в правиле, cooldown или
   завершённом `once`;
 - есть `NOTIFICATION_BLOCKED/FAILED` — проблема разрешения или канала;
-- есть `ACTIVE_CONFIRMED`, но человек ничего не заметил — уведомление было в
-  системном списке, дальше проверяются канал, звук, DND и Samsung UI;
+- есть `ACTIVE_CONFIRMED`, но человек ничего не заметил — проверяются канал,
+  звук, DND и Samsung UI;
 - есть `NO_LONGER_ACTIVE_UNKNOWN` — уведомление исчезло без наблюдаемого
   действия; время и состояние останутся в экспорте.
 
@@ -139,7 +165,15 @@ foreground service не добавляется.
 
 Журнал не очищается автоматически. Он переживает перезагрузку и обновление APK.
 Очистка данных приложения или удаление приложения уничтожает локальную БД,
-поэтому перед такими действиями выполните экспорт. Cloud backup отключён.
+поэтому provisioning scripts никогда не выполняют `adb uninstall` или
+`pm clear`. Перед ручными разрушительными действиями сначала экспортируйте
+журнал.
+
+## Разработка приложения
+
+Локальные build scripts сохранены для разработчика репозитория, но не входят в
+OpenCode provisioning workflow. Исправления приложения делаются через
+ChatGPT + GitHub, после чего новый APK снова выпускается GitHub Actions.
 
 ## Репозиторные инструкции
 
