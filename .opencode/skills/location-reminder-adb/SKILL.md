@@ -1,6 +1,6 @@
 ---
 name: location-reminder-adb
-description: Download, provision, validate, inspect, and physically test the released Android geofence reminder app over wired ADB using a finite verified list of circular zones and its persistent audit journal.
+description: Download, provision, author finite local rules for, inspect, and physically test the released Android geofence reminder app over wired ADB with its persistent audit journal.
 ---
 
 # Location Reminder ADB
@@ -16,12 +16,25 @@ reminders, diagnose a missed notification, or run the Samsung S21 Ultra test.
 - [`docs/JOURNAL_AND_DEBUGGING.md`](../../../docs/JOURNAL_AND_DEBUGGING.md)
 - [Test record](./templates/test-record.md)
 
+## State ownership
+
+Keep one source for each kind of state:
+
+- versioned repository: schema, disabled example, documentation and scripts;
+- local clone: `config/rules.local.json`, the desired user configuration;
+- phone: applied rules, registration result and persistent audit journal.
+
+`config/rules.local.json` is intentionally gitignored. Do not commit personal
+reminders or location coordinates to the public repository. Do not maintain a
+second hand-edited copy elsewhere. After import, compare the local file SHA-256
+with the rules SHA shown by phone diagnostics.
+
 ## Fixed MVP boundary
 
-- GitHub Actions is the build authority. Device provisioning must download a
+- GitHub Actions is the build authority. Device provisioning downloads a
   published APK; do not install JDK, Gradle, Android SDK, Android Studio or an
   emulator locally.
-- USB ADB is temporary provisioning and diagnostics, not an operational runtime.
+- USB ADB is temporary provisioning and diagnostics, not operational runtime.
 - Runtime is Google Play services geofencing plus local Android notifications.
 - Do not introduce server/MCP transport, FCM, polling, continuous location,
   foreground service, account, cloud storage or PWA.
@@ -63,16 +76,15 @@ building or patching locally.
 The user grants precise location, background location “Allow all the time”, and
 notifications through Android UI. Never bypass this.
 
-### 3. Verify notification plumbing before adding real places
+### 3. Verify installed UI and persistent journal
 
-```bash
-./scripts/test-notification.sh [rule-id]
-./scripts/diagnose.sh
-./scripts/export-journal.sh
-```
+Open «Напоминания», «Журнал» and «Диагностика». Relaunch the app and confirm the
+journal remains visible.
 
-Require a journal row for the attempt and inspect `FAILED`,
-`POSTED_UNCONFIRMED`, or `ACTIVE_CONFIRMED`. This is not a geofence test.
+A fresh install may correctly show `rules=0`. In the current APK the debug test
+notification requires an existing rule with at least one zone. Do not create a
+fake coordinate merely to make this check green. Record the zero-rule state and
+continue to author the first real user-approved rule.
 
 ### 4. Normalize the reminder
 
@@ -86,9 +98,23 @@ For every place provide stable zone ID, label, latitude, longitude, radius and a
 short provenance note. Do not guess. If ambiguous, keep the rule disabled. For a
 normal outdoor urban point, start around 120–180 m and tune from observations.
 
-### 6. Generate and validate
+### 6. Generate and validate local desired state
 
-Copy `config/rules.example.json` to `config/rules.local.json`; run:
+Create the local file from the versioned example.
+
+Windows PowerShell:
+
+```powershell
+Copy-Item config/rules.example.json config/rules.local.json
+```
+
+Bash:
+
+```bash
+cp config/rules.example.json config/rules.local.json
+```
+
+Replace every example value, then run:
 
 ```bash
 python3 scripts/validate-rules.py config/rules.local.json
@@ -96,18 +122,30 @@ python3 scripts/validate-rules.py config/rules.local.json
 
 Preserve rule IDs when completion/cooldown state should survive edits. Use a new
 ID, or an explicit reset command, only when the user intends a new reminder.
+Before import show the user a compact table of every rule and zone.
 
-### 7. Import and visually verify current state
+### 7. Import and prove desired/applied parity
 
 ```bash
 ./scripts/import-rules.sh config/rules.local.json
 ./scripts/diagnose.sh
 ```
 
-On the phone, verify every rule, zone label, coordinate, radius, repeat mode and
-latest import/registration status. The app is read-only by design.
+On the phone verify every rule, zone label, coordinate, radius, repeat mode and
+latest registration status. Compare SHA-256 of `config/rules.local.json` with the
+rules SHA in diagnostics. Do not continue on mismatch.
 
-### 8. Run a physical boundary test
+### 8. Verify notification plumbing after real import
+
+```bash
+./scripts/test-notification.sh [rule-id]
+./scripts/export-journal.sh
+```
+
+Require a journal row for the attempt and inspect `FAILED`,
+`POSTED_UNCONFIRMED`, or `ACTIVE_CONFIRMED`. This is not a geofence test.
+
+### 9. Run a physical boundary test
 
 ```bash
 ./scripts/mark-observation.sh "outside zone; physical test started"
@@ -126,13 +164,13 @@ Diagnose by the first missing stage:
 - `TAPPED`/`DISMISSED`: interaction observed;
 - `NO_LONGER_ACTIVE_UNKNOWN`: disappeared without observed interaction.
 
-### 9. Reboot and battery
+### 10. Reboot and battery
 
 Verify boot re-registration separately. Start with Samsung `Optimized`; only
 after reproducible misses inspect Deep sleeping apps. Use batterystats scripts
 for a 3–7 day run and never keep ADB connected during the energy experiment.
 
-### 10. Escalate code defects instead of developing locally
+### 11. Escalate code defects instead of developing locally
 
 For a code/build/runtime defect, collect release tag, APK SHA-256, device/OS/One
 UI versions, exact commands, stdout/stderr, relevant `adb logcat`, diagnostics
