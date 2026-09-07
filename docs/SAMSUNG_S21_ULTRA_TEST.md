@@ -1,79 +1,150 @@
-# Протокол Samsung Galaxy S21 Ultra
+# Samsung Galaxy S21 Ultra — аппаратная проверка Geo Reminder
 
-## A. Устройство, сборка и разрешения
+## Базовые ограничения
 
-1. Записать модель, Android, API и One UI.
-2. Подключить USB; `adb devices -l` должен показать ровно одно выбранное
-   авторизованное устройство либо задаётся `DEVICE_SERIAL`.
-3. Установить debug APK и открыть приложение.
-4. Выдать precise foreground location.
-5. В системных настройках выбрать location **Allow all the time**.
-6. Разрешить notifications и проверить importance канала.
-7. Оставить Samsung battery mode `Optimized`.
-8. Выполнить `scripts/diagnose.sh` и экспортировать baseline journal.
+- устройство: Samsung Galaxy S21 Ultra;
+- проводной ADB;
+- штатный Samsung battery mode `Optimized` в начале эксперимента;
+- никаких `adb root`, wireless ADB, bootloader изменений, `pm clear` или
+  `adb uninstall`;
+- приложение должно продолжать работать после отключения USB;
+- development APK берётся только из опубликованного GitHub prerelease и
+  устанавливается через `adb install -r`.
 
-## B. Детерминированный импорт
+## Актуальная версия для проверки
 
-1. Начать с одной реальной наружной точки, а не категории.
-2. Независимо проверить координаты; для первого теста использовать круг
-   150–200 м.
-3. Выставить `responsiveness_ms` 120000–180000.
-4. Запустить Python validator.
-5. Импортировать JSON по ADB.
-6. В телефоне проверить список правил, координаты и SHA последнего импорта.
-7. Выполнить test notification и проверить состояния journal lifecycle.
+```text
+version: 0.2.0-debug
+commit: f1904eeb83f30efb4276be49e3b972a056bfca65
+tag: debug-f1904eeb83f3
+APK SHA-256: ee7da66aeb102976219517b6019c48e2853c197fc9ed9b4a2c54ef3a4680de13
+```
 
-## C. Физический проход
+GitHub Actions `Android CI #20`, run `34148227917` — PASS.
 
-1. На телефоне или через `scripts/mark-observation.sh` записать отметку
-   «начало теста, нахожусь снаружи».
-2. Убедиться, что телефон явно снаружи круга.
-3. Отключить USB; приложение закрывать допустимо.
-4. Войти в круг при обычном использовании телефона.
-5. Записать реальное время пересечения и время уведомления.
-6. Ждать не меньше responsiveness плюс несколько минут до классификации miss.
-7. После окна наблюдения снова подключить USB и экспортировать JSONL.
+## Установка
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-latest-release.ps1
+```
+
+Bash/Git Bash/WSL:
+
+```bash
+./scripts/install-debug.sh
+```
+
+После установки вручную подтвердить precise location, background location
+**Allow all the time** и notifications. Журнал предыдущей версии должен
+сохраниться.
+
+## Проверка нового notification channel
+
+Открыть **Диагностика** и подтвердить:
+
+```text
+version=0.2.0-debug
+notification_channel_id=geo-reminders-v2
+notification_channel=HIGH
+```
+
+Проверить также:
+
+- `notification_channel_sound` не `SILENT_OR_MISSING`;
+- `notification_channel_vibration=true` либо явно зафиксировать пользовательское
+  изменение;
+- `notification_channel_bypass_dnd` только наблюдать, не включать обход DND;
+- `responsiveness_ms` содержит фактические значения активных правил.
+
+Нажать **«Настроить звук геонапоминаний»** и выбрать различимый системный
+Samsung notification sound. Название выбранного звука зафиксировать в локальном
+тестовом отчёте, если UI его показывает. Новая сборка для смены системного звука
+не требуется.
+
+## Test notification
+
+Для существующего реального правила:
+
+```bash
+./scripts/test-notification.sh [rule-id]
+./scripts/diagnose.sh
+./scripts/export-journal.sh
+```
+
+Проверить:
+
+- notification опубликован через `geo-reminders-v2`;
+- пользователь действительно услышал сигнал;
+- пользователь может по сигналу отличить Geo Reminder от обычного потока;
+- tapping/dismissal продолжают попадать в журнал;
+- отключение звука в системных настройках канала не обходится приложением.
+
+## Физическая проверка latency
+
+До движения:
+
+```bash
+./scripts/mark-observation.sh "0.2.0 physical test started outside"
+```
+
+Начать заведомо снаружи тестового круга. Отключить USB. Пересечь границу и
+отдельно записать наблюдаемое человеком время входа/появления/звука.
+
+После теста:
+
+```bash
+./scripts/diagnose.sh
+./scripts/export-journal.sh
+```
+
+Для события выписать:
+
+```text
+rule_id
+zone_id
+radius_m
+responsiveness_ms
+triggeringLocation.time_ms
+triggering_location_to_receiver_ms
+geofence_receiver_to_notification_attempt_ms
+notification_attempt_to_posted_ms
+geofence_receiver_to_notification_posted_ms
+user-observed boundary time
+user-observed sound time
+```
 
 Интерпретация:
 
-- нет `GEOFENCE_EVENT_RECEIVED` — location stack не передал событие;
-- событие есть, но `REMINDER_TRIGGER_SKIPPED` — смотреть reason;
-- есть `NOTIFICATION_BLOCKED/FAILED` — notification path сломан;
-- есть `ACTIVE_CONFIRMED` — ID был активен в Android;
-- есть `TAPPED/DISMISSED` — зафиксировано пользовательское действие;
-- есть `NO_LONGER_ACTIVE_UNKNOWN` — ID исчез без наблюдаемого действия.
+- `triggeringLocation.time_ms` — время системного location sample, не доказанный
+  момент пересечения границы;
+- `triggering_location_to_receiver_ms` — сколько прошло от системного sample до
+  получения BroadcastReceiver;
+- `geofence_receiver_to_notification_attempt_ms` и
+  `notification_attempt_to_posted_ms` локализуют app-side часть;
+- разница между пользовательским наблюдением и системными timestamps анализируется
+  отдельно и не смешивается с app-side latency.
 
-## D. Once, repeat и cooldown
+Если `GEOFENCE_EVENT_RECEIVED` отсутствует после observation mark, проблема до
+application code. Если event есть, но app-side latency мала, звук или
+notification UI не должны использоваться как объяснение задержки geofence.
 
-- `once`: после успешной доставки выйти и снова войти; второго уведомления быть
-  не должно.
-- `always`: повторный вход после cooldown должен создать новый notification ID.
-- импорт того же once rule ID не сбрасывает completion.
-- для намеренного нового напоминания используется новый rule ID либо
-  `scripts/reset-rule-state.sh <rule-id>` с фиксацией в журнале.
+## Решения после измерения
 
-## E. Reboot
+Только после одного или нескольких воспроизводимых маршрутов рассматривать:
 
-1. Подготовить свежее активное правило.
-2. Перезагрузить телефон без USB.
-3. После обычной загрузки и разблокировки выполнить физический проход.
-4. Экспортировать журнал и найти `SYSTEM_RESTORE_EVENT_RECEIVED`, затем
-   `GEOFENCE_REGISTRATION_SUCCEEDED` с reboot reason.
+- изменение radius;
+- изменение `responsiveness_ms`;
+- настройки Wi-Fi/location/battery.
 
-## F. Батарея
+Не переходить к continuous GPS, foreground location service или polling только
+ради попытки получить «мгновенный» geofence.
 
-1. Выполнить `scripts/reset-batterystats.sh`.
-2. Использовать телефон 3–7 дней с небольшим набором зон.
-3. Не держать UI открытым и не оставлять ADB подключённым.
-4. Снять `scripts/battery-snapshot.sh`.
-5. Сопоставить app-attributed расход с обычным шумом устройства.
+## Bundled sound
 
-## Samsung-specific escalation
-
-Только после воспроизводимого miss:
-
-1. проверить `Deep sleeping apps`;
-2. исключить приложение из deep sleep;
-3. повторить тот же маршрут с теми же radius/responsiveness;
-4. не менять одновременно батарейный режим и геозону;
-5. `Unrestricted` использовать только как контролируемое сравнение.
+Если системного Samsung-звука недостаточно и нужен один и тот же фирменный звук
+на разных устройствах, аппаратная сессия лишь фиксирует аудиофайл как входной
+артефакт. Android source не редактируется локально. Файл добавляется через
+следующую GitHub-разработку, а звук получает новый versioned notification channel,
+чтобы не пытаться изменить auditory behavior уже созданного `v2`.
