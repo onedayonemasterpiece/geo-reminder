@@ -52,82 +52,71 @@ https://github.com/onedayonemasterpiece/idea-hub/blob/main/ideas/venture.new-pro
 GeoReminder. Направление принято — отдельное явно различимое звуковое поведение
 для геонапоминаний.
 
-**Пока не выбрано:** короткий одиночный звук, ограниченный повторяющийся сигнал
-или короткая мелодия. Не выбирать этот паттерн молча в коде.
+В версии 0.2.0 для этого создан новый channel `geo-reminders-v2` и прямой переход
+в его системные настройки. Пользователь может выбрать любой системный Samsung
+notification sound без новой сборки.
 
-Технически текущий Android notification channel `geo-reminders` уже существует.
-Его auditory behavior после создания находится под контролем Android/пользователя
-и не должен считаться программно мигрируемым. Если выбран новый bundled/default
-sound, реализация должна использовать новый versioned channel ID и сохранить
-пользователю управление каналом.
+Отдельный bundled sound пока не выбран и в APK не включён. Если потребуется
+одинаковый звук на разных устройствах, нужен аудиофайл и следующий versioned
+channel. Существующий channel после создания нельзя считать программно
+перенастраиваемым.
 
 ### 3. Не превращать напоминание в сирену
 
 Без отдельного продуктового решения не добавлять бесконечный loop, alarm-style
 foreground playback, обход DND или самопроизвольное повышение громкости.
 
-Если будет выбран повторяющийся сигнал, повторы должны быть конечными и иметь
-понятное прекращение. Пользователь должен иметь возможность отключить звук через
-системные настройки канала. DND/тихий режим Android уважать.
+Пользователь управляет звуком через системные настройки канала. DND/тихий режим
+Android не обходятся.
 
-## Что уже есть в текущем MVP
+## Реализовано в 0.2.0
 
-- `GeofenceRegistrar` передаёт `responsiveness_ms` в `setNotificationResponsiveness`;
-- `GEOFENCE_EVENT_RECEIVED` сохраняет `triggeringLocation`, включая `time_ms`,
-  координаты и accuracy, если Google Play services предоставил location;
-- `NOTIFICATION_ATTEMPT` и последующие состояния имеют собственные timestamps;
-- `USER_OBSERVATION_MARK` позволяет привязать физический тест к журналу;
-- notification channel имеет `IMPORTANCE_HIGH`, вибрацию и системно управляемое
-  звуковое поведение, но отдельного узнаваемого bundled sound сейчас нет;
-- диагностика показывает importance канала, но пока не выводит его sound/vibration
-  настройки как отдельные поля.
+App commit:
+`f1904eeb83f30efb4276be49e3b972a056bfca65`.
 
-## Следующий пакет реализации
+GitHub Actions `Android CI #20`, run `34148227917`: validation, unit tests,
+lint, `assembleDebug`, artifact и prerelease — PASS.
 
-### A. Измеримость latency
+Release:
+https://github.com/onedayonemasterpiece/geo-reminder/releases/tag/debug-f1904eeb83f3
 
-1. В журнале/экспорте сделать явными вычислимые временные участки, не меняя
-   смысла существующих событий:
-   - `triggering_location.time_ms -> GEOFENCE_EVENT_RECEIVED`;
-   - `GEOFENCE_EVENT_RECEIVED -> NOTIFICATION_ATTEMPT`;
-   - `NOTIFICATION_ATTEMPT -> posted/active confirmation`.
-2. Добавить в diagnostics текущий `responsiveness_ms` активных правил либо
-   вывести его рядом с правилом так, чтобы физический эксперимент был
-   воспроизводим.
-3. На реальном маршруте фиксировать наблюдаемое время пересечения границы
-   отдельно от системного location timestamp. Не выдавать `triggeringLocation`
-   за точный момент физического входа.
-4. Если latency неприемлема, проверять radius, фактическую accuracy,
-   background-location permissions, Wi-Fi/location settings, battery state и
-   `responsiveness_ms` по журналу; не начинать с архитектурного перехода на
-   постоянный GPS.
+APK SHA-256:
+`ee7da66aeb102976219517b6019c48e2853c197fc9ed9b4a2c54ef3a4680de13`.
 
-### B. Заметность уведомления
+В коде:
 
-1. Расширить diagnostics: channel ID, importance, sound URI/presence,
-   vibration state и возможность быстро открыть системные настройки канала.
-2. После выбора звукового паттерна создать новый versioned reminder channel с
-   выбранным default sound и понятным именем; старый канал не переопределять как
-   будто его настройки можно изменить после создания.
-3. `TEST_NOTIFICATION` должен проверять тот же production reminder channel,
-   которым пользуются реальные geofence events.
-4. После установки APK пользователь подтверждает на телефоне, что сигнал
-   действительно узнаваем и что системный opt-out работает.
+- новый channel `geo-reminders-v2`, `IMPORTANCE_HIGH`, vibration и системный
+  default notification sound;
+- кнопка **«Настроить звук геонапоминаний»**;
+- diagnostics выводит channel ID, importance, sound URI, vibration,
+  `canBypassDnd`, audio usage и legacy channel;
+- diagnostics показывает `responsiveness_ms` активных правил;
+- `GEOFENCE_EVENT_RECEIVED` сохраняет `receiver_received_at_ms` и при наличии
+  `triggeringLocation` вычисляет `triggering_location_to_receiver_ms`;
+- notification path пишет
+  `geofence_receiver_to_notification_attempt_ms`,
+  `notification_attempt_to_posted_ms` и
+  `geofence_receiver_to_notification_posted_ms`;
+- `GEOFENCE_ZONE_MATCHED` пишет radius и `responsiveness_ms`;
+- добавлены unit tests для вычисления latency;
+- versionCode `2`, versionName `0.2.0`.
 
-## Критерий готовности этой доработки
+Полный release record:
+[`RELEASE_0.2.0_2026-09-07.md`](RELEASE_0.2.0_2026-09-07.md).
 
-Доработка не считается закрытой по одному факту «push появился».
+## Что осталось проверить на телефоне
 
-Нужна аппаратная проверка на реальном посещении места, в которой:
+Кодовый пакет и APK готовы, но аппаратная приёмка 0.2.0 ещё не выполнена.
+Нужно:
 
-- журнал позволяет разнести geofence latency и app/notification latency;
-- выбранный звуковой сигнал слышимо отличим от обычного потока уведомлений по
-  подтверждению пользователя;
-- test notification и реальное geofence notification используют один и тот же
-  актуальный канал;
-- blocked/muted channel и denied notification permission видны в diagnostics;
-- DND/системное отключение звука не обходятся приложением;
-- нет бесконечного фонового воспроизведения и continuous location tracking.
+1. установить последний prerelease через существующий provisioning script;
+2. проверить `version=0.2.0-debug` и channel `geo-reminders-v2`;
+3. выбрать различимый системный Samsung sound;
+4. выполнить test notification и подтвердить слышимость/узнаваемость;
+5. провести реальный вход в геозону;
+6. экспортировать journal и сравнить новые latency-поля;
+7. только по измерению решать, менять ли radius или `responsiveness_ms`.
 
-До выбора конкретного звука можно и нужно реализовать измеримость и диагностику;
-сам звуковой паттерн остаётся открытым продуктовым решением.
+Критерий готовности не меняется: звук и geofence latency проверяются отдельно;
+системный `triggeringLocation.time_ms` не выдаётся за точный момент физического
+пересечения границы; DND/opt-out сохраняются; continuous GPS не добавлен.
