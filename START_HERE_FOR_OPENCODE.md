@@ -1,136 +1,137 @@
-# Первое задание для OpenCode
+# START HERE FOR OPENCODE — Geo Reminder
 
-Используй project skill `location-reminder-adb` и правила из `AGENTS.md`.
+## Цель текущей локальной сессии
 
-## Роль OpenCode
+Разработка приложения выполнена в ChatGPT + GitHub. Локальный OpenCode нужен
+только для provisioning и аппаратной проверки на Samsung по проводному ADB.
 
-OpenCode **не разрабатывает и не собирает Android-приложение локально**. Код,
-проверки и APK готовятся в GitHub. Локальная задача ограничена следующим:
+Не устанавливай Android build tooling, не собирай APK локально и не редактируй
+Kotlin/Gradle/Actions. Если обнаружен runtime-дефект — сохрани доказательства и
+верни их в GitHub для следующей реализации.
 
-1. скачать репозиторий и последний проверенный debug prerelease;
-2. проверить SHA-256 и установить APK по проводному ADB;
-3. помочь выдать разрешения и проверить UI/журнал;
-4. сформировать конечный `config/rules.local.json` по конкретным указаниям
-   пользователя, импортировать его и провести аппаратные тесты.
-
-Не устанавливай JDK, Gradle, Android SDK, Android Studio или эмулятор. Не
-исправляй Kotlin/Gradle/Actions локально. При дефекте собери диагностику и верни
-её пользователю для исправления через ChatGPT + GitHub.
-
-## Где хранится состояние
-
-Есть ровно три уровня, их нельзя смешивать:
-
-1. **Репозиторий — канонический контракт:**
-   - `config/rules.schema.json` — машиночитаемая схема;
-   - `config/rules.example.json` — отключённый безопасный пример;
-   - `.opencode/skills/location-reminder-adb/references/rule-contract.md` —
-     смысл полей;
-   - этот файл и project skill — порядок работы.
-2. **Локальная копия — желаемая пользовательская конфигурация:**
-   `config/rules.local.json`. Файл создаётся только после получения реальных
-   напоминаний и конкретных мест, исключён из Git и не должен попадать в
-   публичный репозиторий.
-3. **Телефон — применённое состояние и доказательства:** текущие импортированные
-   правила, registration status и постоянный audit journal.
-
-Не создавай вторую ручную копию правил вне рабочей директории. После импорта
-сравни SHA-256 локального `rules.local.json` с SHA правил в диагностике телефона.
-
-## Модель
-
-Для обычного развёртывания и наполнения используй:
+## Актуальная сборка
 
 ```text
-GPT-5.6 Terra
-reasoning: medium
+version: 0.2.0-debug
+commit: f1904eeb83f30efb4276be49e3b972a056bfca65
+tag: debug-f1904eeb83f3
+package: com.onedayonemasterpiece.georeminder.debug
+APK SHA-256: ee7da66aeb102976219517b6019c48e2853c197fc9ed9b4a2c54ef3a4680de13
 ```
 
-Переходи на GPT-5.6 Sol/high только при устойчивой нетривиальной проблеме ADB,
-One UI, разрешений или интерпретации журнала.
+Release:
+https://github.com/onedayonemasterpiece/geo-reminder/releases/tag/debug-f1904eeb83f3
 
-## Развёртывание
+## Что проверяет 0.2.0
 
-1. Клонируй репозиторий и переключись на
-   `feat/android-geofence-audit-mvp-20260826`.
-2. Прочитай `.opencode/skills/location-reminder-adb/SKILL.md`.
-3. Подключи разблокированный Samsung Galaxy S21 Ultra по USB и добейся ровно
-   одного устройства со статусом `device` в `adb devices -l`.
-4. На Windows PowerShell выполни:
+Эта версия разделяет два эффекта:
 
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File scripts/install-latest-release.ps1
-   ```
+1. задержку доставки geofence event;
+2. заметность уже опубликованного notification.
 
-   На Bash/Git Bash/WSL выполни:
+В ней есть новый канал `geo-reminders-v2`, кнопка прямого перехода в его
+системные настройки и latency-поля в журнале:
 
-   ```bash
-   ./scripts/install-debug.sh
-   ```
+- `triggering_location_to_receiver_ms`;
+- `geofence_receiver_to_notification_attempt_ms`;
+- `notification_attempt_to_posted_ms`;
+- `geofence_receiver_to_notification_posted_ms`.
 
-   Скрипты выбирают последний опубликованный debug prerelease, скачивают APK,
-   checksum и build metadata, проверяют SHA-256 и выполняют `adb install -r`.
-   Они не удаляют приложение и не очищают его данные.
-5. Пользователь вручную выдаёт precise location, background location
-   **Allow all the time** и notifications. Не обходи системные экраны.
-6. Проверь экраны «Напоминания», «Журнал» и «Диагностика», затем перезапусти
-   приложение и убедись, что журнал сохраняется.
+## Обязательный порядок
 
-Если диагностика показывает `rules=0`, это корректное состояние нового
-устройства. `TEST_NOTIFICATION` в текущем APK требует существующего правила с
-зоной. Не создавай фиктивную точку и не считай отсутствие тестового уведомления
-поломкой: сначала подготовь первое реальное правило по следующему разделу.
+1. Прочитай `.opencode/skills/location-reminder-adb/SKILL.md`.
+2. Убедись, что подключён ровно один authorized ADB device, либо явно задай
+   `DEVICE_SERIAL`.
+3. Установи актуальный prerelease штатным скриптом:
 
-## Наполнение реальными правилами
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-latest-release.ps1
+```
 
-1. Получи от пользователя конечный список конкретных мест и тексты
-   напоминаний. Не расширяй запрос до категорий вроде «любой супермаркет».
-2. Для каждой точки найди и перепроверь координаты. Не угадывай; сомнительные
-   записи оставляй `enabled: false`.
-3. Создай локальный файл из канонического примера.
+Он автоматически выбирает последний опубликованный `debug-*` prerelease,
+скачивает APK + checksum, проверяет SHA-256 и выполняет `adb install -r`, не
+очищая данные и журнал.
 
-   Windows PowerShell:
+4. Запусти приложение и проверь в **Диагностике**:
 
-   ```powershell
-   Copy-Item config/rules.example.json config/rules.local.json
-   ```
+```text
+version=0.2.0-debug
+notification_channel_id=geo-reminders-v2
+notification_channel=HIGH
+```
 
-   Bash:
+5. Нажми **«Настроить звук геонапоминаний»**. Пользователь выбирает любой
+   различимый системный Samsung notification sound. Не обходи системный UI и не
+   меняй DND/громкость скрыто.
+6. Выполни test notification для существующего реального правила:
 
-   ```bash
-   cp config/rules.example.json config/rules.local.json
-   ```
+```bash
+./scripts/test-notification.sh [rule-id]
+```
 
-4. Замени все примерные значения, сохрани стабильные rule/zone ID и проверь:
+Пользователь должен подтвердить, что услышал выбранный звук и узнаёт его как
+Geo Reminder.
+7. Выполни:
 
-   ```bash
-   python3 scripts/validate-rules.py config/rules.local.json
-   ```
+```bash
+./scripts/diagnose.sh
+./scripts/export-journal.sh
+```
 
-5. До импорта покажи пользователю сводку:
-   `rule ID / title / transition / repeat / zone ID / label / coordinates / radius`.
-6. Импортируй:
+Сохрани локально вывод и убедись, что diagnostics показывает фактический sound
+URI/presence и vibration state.
+8. Перед физическим проходом запиши observation mark:
 
-   ```bash
-   ./scripts/import-rules.sh config/rules.local.json
-   ./scripts/diagnose.sh
-   ```
+```bash
+./scripts/mark-observation.sh "0.2.0 physical geofence test started outside"
+```
 
-7. На телефоне сверяй все правила, зоны, координаты, радиусы и registration
-   status. Сравни локальный SHA-256 файла с SHA правил на телефоне.
-8. Только после успешного импорта проверь notification plumbing:
+9. Отключи USB. Пользователь начинает явно снаружи одной известной зоны,
+   пересекает её границу и фиксирует наблюдаемое время отдельно от системного
+   timestamp.
+10. После прохода подключи USB и снова экспортируй diagnostics/journal.
+11. Для соответствующего geofence event выпиши:
 
-   ```bash
-   ./scripts/test-notification.sh [rule-id]
-   ./scripts/export-journal.sh
-   ```
+```text
+rule id / zone id
+radius_m
+responsiveness_ms
+triggeringLocation.time_ms
+triggering_location_to_receiver_ms
+geofence_receiver_to_notification_attempt_ms
+notification_attempt_to_posted_ms
+geofence_receiver_to_notification_posted_ms
+субъективное время, когда пользователь услышал звук
+```
 
-   В журнале должны появиться attempt и результат `FAILED`,
-   `POSTED_UNCONFIRMED` либо `ACTIVE_CONFIRMED`. Это ещё не физический geofence
-   test.
-9. Затем проводи unplugged physical test, reboot test и наблюдение батареи по
-   `docs/SAMSUNG_S21_ULTRA_TEST.md`.
+12. Не выдавай `triggeringLocation.time_ms` за точный момент физического входа.
+   Это системный location sample, а не ground truth границы.
+13. Только по результату измерения предлагай изменение radius или
+   `responsiveness_ms`. Не компенсируй задержку continuous GPS, foreground
+   location service или polling.
 
-При любой runtime-проблеме не редактируй исходники локально. Сохрани release tag,
-APK SHA-256, точную команду, stdout/stderr, релевантный `adb logcat`, экран
-диагностики и JSONL-экспорт и верни их пользователю.
+## Про собственный аудиофайл
+
+В 0.2.0 отдельный bundled-файл не нужен: системный звук выбирается пользователем
+в настройках channel и не требует новой сборки.
+
+Если владелец позже хочет одинаковый фирменный звук на всех устройствах, не
+добавляй его локально в эту provisioning-сессию. Передай файл/путь как вход для
+следующей GitHub-разработки: аудио должно попасть в Android resources, после чего
+нужен новый versioned notification channel (например `geo-reminders-v3`).
+Существующий `v2` нельзя считать программно перенастраиваемым после создания.
+
+## Стоп-условия
+
+Остановись и верни доказательства, если:
+
+- checksum не совпал;
+- `adb install -r` не проходит;
+- версия после установки не `0.2.0-debug`;
+- кнопка channel settings не открывает `geo-reminders-v2`;
+- test notification не создаётся при существующем валидном правиле;
+- новый geofence event есть, а notification path завершается ошибкой;
+- diagnostics или JSONL export ломаются.
+
+Не удаляй приложение, не выполняй `pm clear`, не включай wireless ADB и не
+стирай существующий журнал.
