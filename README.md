@@ -27,6 +27,26 @@
 - один GitHub Actions workflow для tests, lint, APK, SHA-256, artifact и debug
   prerelease.
 
+## 0.2.0: заметность и измеримость задержки
+
+Версия 0.2.0 добавляет новый Android notification channel
+`geo-reminders-v2`. Он создаётся как `IMPORTANCE_HIGH`, с vibration и системным
+notification sound. В **Диагностике** есть кнопка **«Настроить звук
+геонапоминаний»**, открывающая настройки именно этого channel. Там можно выбрать
+отдельный системный Samsung sound без новой сборки APK.
+
+Диагностика теперь показывает фактические channel ID, importance, sound URI,
+vibration, DND behavior и `responsiveness_ms` правил. В журнал добавлены
+вычислимые latency-поля от `triggeringLocation.time_ms` до BroadcastReceiver и
+от BroadcastReceiver до попытки/публикации notification.
+
+Звук не выдаётся за исправление geofence latency. Android geofencing остаётся
+low-power механизмом без continuous GPS, foreground location service или
+polling.
+
+Подробности и аппаратный протокол:
+`docs/RELEASE_0.2.0_2026-09-07.md`.
+
 ## Что означает журнал доставки
 
 Журнал не маскирует разные этапы одним словом «показано»:
@@ -64,12 +84,15 @@ GitHub Actions является build authority. Устанавливать JDK,
 Текущий проверенный prerelease:
 
 ```text
-tag: debug-afa51c3a001c
-app commit: afa51c3a001cff878f896914004878b8dab77e3b
+tag: debug-f1904eeb83f3
+app commit: f1904eeb83f30efb4276be49e3b972a056bfca65
 package: com.onedayonemasterpiece.georeminder.debug
-version: 0.1.0-debug
-SHA-256: 048f1adeab7a868dd4aa805d1f886d109161d316591812c1534f7596e62ada2e
+version: 0.2.0-debug
+SHA-256: ee7da66aeb102976219517b6019c48e2853c197fc9ed9b4a2c54ef3a4680de13
 ```
+
+Release:
+https://github.com/onedayonemasterpiece/geo-reminder/releases/tag/debug-f1904eeb83f3
 
 Каждый успешный implementation build публикует стабильные assets:
 
@@ -110,6 +133,12 @@ Bash/Git Bash/WSL:
 3. разрешение уведомлений.
 
 Начинать тест следует в стандартном Samsung-режиме батареи `Optimized`.
+
+Для 0.2.0 после первого запуска откройте **Диагностика → Настроить звук
+геонапоминаний** и выберите различимый системный звук. Если нужен одинаковый
+bundled звук на разных устройствах, понадобится аудиофайл и следующий versioned
+channel; локальная provisioning-сессия не должна редактировать исходники ради
+этого.
 
 ## Проверка до реальных геозон
 
@@ -160,6 +189,12 @@ python3 scripts/validate-rules.py config/rules.local.json
   звук, DND и Samsung UI;
 - есть `NO_LONGER_ACTIVE_UNKNOWN` — уведомление исчезло без наблюдаемого
   действия; время и состояние останутся в экспорте.
+
+В 0.2.0 дополнительно сравнивайте
+`triggering_location_to_receiver_ms`,
+`geofence_receiver_to_notification_attempt_ms`,
+`notification_attempt_to_posted_ms` и
+`geofence_receiver_to_notification_posted_ms`.
 
 ## Хранение
 
