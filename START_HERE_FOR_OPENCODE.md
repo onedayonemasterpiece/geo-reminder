@@ -37,60 +37,120 @@ https://github.com/onedayonemasterpiece/geo-reminder/releases/tag/debug-f1904eeb
 - `notification_attempt_to_posted_ms`;
 - `geofence_receiver_to_notification_posted_ms`.
 
-## Обязательный порядок
+## Важное правило обновления: не тратить время на несовместимую подпись
 
-1. Прочитай `.opencode/skills/location-reminder-adb/SKILL.md`.
-2. Убедись, что подключён ровно один authorized ADB device, либо явно задай
-   `DEVICE_SERIAL`.
-3. Установи актуальный prerelease штатным скриптом:
+GitHub-hosted debug builds пока не используют постоянный repository-pinned
+signing key. Поэтому подпись уже установленной старой debug-версии и 0.2.0 может
+не совпасть.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/install-latest-release.ps1
-```
-
-Он автоматически выбирает последний опубликованный `debug-*` prerelease,
-скачивает APK + checksum, проверяет SHA-256 и выполняет `adb install -r`, не
-очищая данные и журнал.
-
-4. Запусти приложение и проверь в **Диагностике**:
-
-```text
-version=0.2.0-debug
-notification_channel_id=geo-reminders-v2
-notification_channel=HIGH
-```
-
-5. Нажми **«Настроить звук геонапоминаний»**. Пользователь выбирает любой
-   различимый системный Samsung notification sound. Не обходи системный UI и не
-   меняй DND/громкость скрыто.
-6. Выполни test notification для существующего реального правила:
-
-```bash
-./scripts/test-notification.sh [rule-id]
-```
-
-Пользователь должен подтвердить, что услышал выбранный звук и узнаёт его как
-Geo Reminder.
-7. Выполни:
+Перед любым удалением сначала сохранить всё, что можно восстановить:
 
 ```bash
 ./scripts/diagnose.sh
 ./scripts/export-journal.sh
 ```
 
-Сохрани локально вывод и убедись, что diagnostics показывает фактический sound
-URI/presence и vibration state.
-8. Перед физическим проходом запиши observation mark:
+Также сохранить существующий локальный `config/rules.local.json`, если он есть,
+и зафиксировать текущую установленную версию.
+
+После этого сделать **ровно одну** обычную попытку обновления через
+`adb install -r` (штатный install script делает именно это). Если обновление
+успешно — приложение не удалять.
+
+Если Android возвращает именно signature/certificate incompatibility, например
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE` или явное `signatures do not match`, не
+пробовать другие варианты обновления и не устанавливать signing/build tools.
+Это считается доказанным mismatch.
+
+В таком случае пользователь явно разрешил fresh reinstall **только Geo Reminder**:
+
+```bash
+adb uninstall com.onedayonemasterpiece.georeminder.debug
+adb install <verified-0.2.0-apk>
+```
+
+Удалять можно только после успешного экспорта старого журнала и сохранения
+реальных правил. `pm clear` запрещён. Другие пакеты не трогать.
+
+После fresh install заново выдать permissions и импортировать сохранённые правила.
+Старый журнал останется только в экспортированном файле; не утверждать, что он
+сохранился внутри новой установки.
+
+## Обязательный порядок
+
+1. Прочитай `AGENTS.md` и `.opencode/skills/location-reminder-adb/SKILL.md`.
+2. Убедись, что подключён ровно один authorized ADB device, либо явно задай
+   `DEVICE_SERIAL`.
+3. Если Geo Reminder уже установлен:
+   - сними diagnostics;
+   - экспортируй JSONL journal;
+   - сохрани `config/rules.local.json`, если он существует;
+   - зафиксируй установленную версию/package.
+4. Запусти штатный установщик:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-latest-release.ps1
+```
+
+Он скачивает последний опубликованный `debug-*` prerelease, APK + checksum,
+проверяет SHA-256 и делает одну обычную попытку `adb install -r`.
+5. Если update прошёл — продолжай. Если доказан signature mismatch — сразу
+   выполни fresh reinstall по правилу выше и больше не трать время на repair
+   несовместимой установки.
+6. После установки запусти приложение и убедись, что фактически установлено:
+
+```text
+version=0.2.0-debug
+package=com.onedayonemasterpiece.georeminder.debug
+notification_channel_id=geo-reminders-v2
+notification_channel=HIGH
+```
+
+7. Выдай/проверь через Android UI:
+   - precise location;
+   - Location → Allow all the time;
+   - notifications.
+   Не обходи permission model shell-командами.
+8. Если был fresh reinstall и существуют сохранённые реальные правила:
+
+```bash
+python3 scripts/validate-rules.py config/rules.local.json
+./scripts/import-rules.sh config/rules.local.json
+```
+
+Сверь rules SHA в диагностике с локальным файлом и визуально проверь правила и
+координаты на телефоне.
+9. Открой **Диагностика → Настроить звук геонапоминаний**. Это должно открыть
+   настройки `geo-reminders-v2`. Пользователь выбирает явно различимый системный
+   Samsung notification sound. Не меняй DND/громкость скрыто.
+10. Выполни test notification для существующего реального правила:
+
+```bash
+./scripts/test-notification.sh [rule-id]
+```
+
+Пользователь должен подтвердить, что услышал звук и способен узнавать его как
+Geo Reminder.
+11. Снова выполни:
+
+```bash
+./scripts/diagnose.sh
+./scripts/export-journal.sh
+```
+
+Проверь, что diagnostics показывает фактический sound URI/presence, vibration и
+importance нового channel.
+12. Перед физическим проходом запиши observation mark:
 
 ```bash
 ./scripts/mark-observation.sh "0.2.0 physical geofence test started outside"
 ```
 
-9. Отключи USB. Пользователь начинает явно снаружи одной известной зоны,
+13. Отключи USB. Пользователь начинает явно снаружи одной известной зоны,
    пересекает её границу и фиксирует наблюдаемое время отдельно от системного
    timestamp.
-10. После прохода подключи USB и снова экспортируй diagnostics/journal.
-11. Для соответствующего geofence event выпиши:
+14. После прохода подключи USB и снова экспортируй diagnostics/journal.
+15. Для соответствующего geofence event выпиши:
 
 ```text
 rule id / zone id
@@ -104,11 +164,14 @@ geofence_receiver_to_notification_posted_ms
 субъективное время, когда пользователь услышал звук
 ```
 
-12. Не выдавай `triggeringLocation.time_ms` за точный момент физического входа.
+16. Не выдавай `triggeringLocation.time_ms` за точный момент физического входа.
    Это системный location sample, а не ground truth границы.
-13. Только по результату измерения предлагай изменение radius или
+17. Только по результату измерения предлагай изменение radius или
    `responsiveness_ms`. Не компенсируй задержку continuous GPS, foreground
    location service или polling.
+18. Дополнительно проверь reboot re-registration: перезагрузи телефон только
+   после завершения основной проверки, открой приложение, сними diagnostics и
+   убедись, что активные реальные правила снова зарегистрированы.
 
 ## Про собственный аудиофайл
 
@@ -126,15 +189,17 @@ Android resources и выпуска нового versioned channel (наприм
 
 ## Стоп-условия
 
-Остановись и верни доказательства, если:
+Остановись и верни конкретные доказательства, если:
 
-- checksum не совпал;
-- `adb install -r` не проходит;
+- checksum 0.2.0 не совпал;
+- установка не проходит по причине, отличной от signature mismatch;
+- fresh reinstall после доказанного mismatch не проходит;
 - версия после установки не `0.2.0-debug`;
 - кнопка channel settings не открывает `geo-reminders-v2`;
 - test notification не создаётся при существующем валидном правиле;
 - новый geofence event есть, а notification path завершается ошибкой;
 - diagnostics или JSONL export ломаются.
 
-Не удаляй приложение, не выполняй `pm clear`, не включай wireless ADB и не
-стирай существующий журнал.
+Не останавливайся только потому, что первая `adb install -r` получила
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`: после сохранения состояния это ожидаемая
+ветка для одного fresh reinstall, разрешённого пользователем.
