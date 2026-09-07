@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name=".AdbCommandReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.onedayonemasterpiece.georeminder.debug.action.IMPORT_RULES" />
+                <action android:name="com.onedayonemasterpiece.georeminder.debug.action.TEST_NOTIFICATION" />
+                <action android:name="com.onedayonemasterpiece.georeminder.debug.action.DIAGNOSE" />
+                <action android:name="com.onedayonemasterpiece.georeminder.debug.action.REREGISTER" />
+                <action android:name="com.onedayonemasterpiece.georeminder.debug.action.EXPORT_JOURNAL" />
+                <action android:name="com.onedayonemasterpiece.georeminder.debug.action.RESET_RULE_STATE" />
+                <action android:name="com.onedayonemasterpiece.georeminder.debug.action.MARK_OBSERVATION" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

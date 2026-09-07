@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-26T18:00:00Z",
+  "rules": [
+    {
+      "id": "museum-kaliningrad-001",
+      "title": "Зайти в музей",
+      "message": "Вы рядом с выбранным музеем. Проверьте часы работы и зайдите, если удобно.",
+      "enabled": false,
+      "transition": "enter",
+      "repeat": "once",
+      "cooldown_minutes": 0,
+      "responsiveness_ms": 120000,
+      "source_text": "Напомни зайти в музей, когда буду рядом",
+      "zones": [
+        {
+          "id": "museum-point-01",
+          "label": "ПРИМЕР — замените координаты на проверенные",
+          "latitude": 54.7104,
+          "longitude": 20.4522,
+          "radius_m": 150
+        }
+      ]
+    },
+    {
+      "id": "finite-shopping-list-001",
+      "title": "Купить товары",
+      "message": "Вы рядом с одним из заранее выбранных магазинов.",
+      "enabled": false,
+      "transition": "enter",
+      "repeat": "always",
+      "cooldown_minutes": 720,
+      "responsiveness_ms": 180000,
+      "source_text": "Напомни о списке в одном из этих конкретных магазинов",
+      "zones": [
+        {
+          "id": "shop-01",
+          "label": "ПРИМЕР точки 1",
+          "latitude": 54.72,
+          "longitude": 20.5,
+          "radius_m": 180
+        },
+        {
+          "id": "shop-02",
+          "label": "ПРИМЕР точки 2",
+          "latitude": 54.7,
+          "longitude": 20.51,
+          "radius_m": 180
+        }
+      ]
+    }
+  ]
+}
