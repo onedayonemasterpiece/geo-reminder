@@ -63,7 +63,7 @@ jobs:
             sha256sum geo-reminder-debug.apk > geo-reminder-debug.apk.sha256
           )
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          printf '{\n  "repository": "%s",\n  "commit": "%s",\n  "workflow_run_id": "%s",\n  "built_at": "%s",\n  "package": "com.onedayonemasterpiece.georeminder.debug",\n  "version": "0.1.0-debug"\n}\n' \
+          printf '{\n  "repository": "%s",\n  "commit": "%s",\n  "workflow_run_id": "%s",\n  "built_at": "%s",\n  "package": "com.onedayonemasterpiece.georeminder.debug",\n  "version": "0.2.0-debug"\n}\n' \
             "$GITHUB_REPOSITORY" \
             "$GITHUB_SHA" \
             "$GITHUB_RUN_ID" \
@@ -102,6 +102,6 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --prerelease \
-              --title "Geo Reminder debug ${GITHUB_SHA::12}" \
-              --notes "Verified debug APK built by GitHub Actions from commit $GITHUB_SHA. Includes SHA-256 and build metadata."
+              --title "Geo Reminder 0.2.0 debug ${GITHUB_SHA::12}" \
+              --notes "Verified Geo Reminder 0.2.0 debug APK built by GitHub Actions from commit $GITHUB_SHA. Includes SHA-256 and build metadata."
           fi
