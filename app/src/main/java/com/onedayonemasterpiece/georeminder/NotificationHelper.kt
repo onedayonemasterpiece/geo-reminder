@@ -8,12 +8,15 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import org.json.JSONObject
 
 object NotificationHelper {
-    const val CHANNEL_ID = "geo-reminders"
+    const val CHANNEL_ID = "geo-reminders-v2"
+    const val LEGACY_CHANNEL_ID = "geo-reminders"
     const val EXTRA_NOTIFICATION_ID = "notification_id"
     const val EXTRA_RULE_ID = "rule_id"
     const val EXTRA_ZONE_ID = "zone_id"
@@ -24,15 +27,28 @@ object NotificationHelper {
         val manager = context.getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(
             CHANNEL_ID,
-            context.getString(R.string.notification_channel_name),
+            context.getString(R.string.notification_channel_name_v2),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = context.getString(R.string.notification_channel_description)
+            description = context.getString(R.string.notification_channel_description_v2)
             enableVibration(true)
             setShowBadge(true)
+            setSound(
+                Settings.System.DEFAULT_NOTIFICATION_URI,
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build(),
+            )
         }
         manager.createNotificationChannel(channel)
     }
+
+    fun channelSettingsIntent(context: Context): Intent =
+        Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            putExtra(Settings.EXTRA_CHANNEL_ID, CHANNEL_ID)
+        }
 
     @Synchronized
     fun show(
@@ -40,6 +56,7 @@ object NotificationHelper {
         rule: ReminderRule,
         zone: CircleZone,
         test: Boolean = false,
+        triggerReceivedAtEpochMs: Long? = null,
     ): NotificationOutcome {
         val appContext = context.applicationContext
         val audit = AuditRepository(appContext)
@@ -47,15 +64,22 @@ object NotificationHelper {
         ensureChannel(appContext)
 
         val notificationId = audit.nextNotificationId()
-        val now = System.currentTimeMillis()
+        val attemptAt = System.currentTimeMillis()
         audit.createNotificationAttempt(
             notificationId = notificationId,
             rule = rule,
             zone = zone,
             isTest = test,
             channelId = CHANNEL_ID,
-            createdAtEpochMs = now,
+            createdAtEpochMs = attemptAt,
         )
+        val attemptDetails = JSONObject()
+            .put("channel_id", CHANNEL_ID)
+            .put("test", test)
+            .put("notifications_enabled", manager.areNotificationsEnabled())
+        LatencyMetrics.nonNegativeDelta(triggerReceivedAtEpochMs, attemptAt)?.let {
+            attemptDetails.put("geofence_receiver_to_notification_attempt_ms", it)
+        }
         EventLog.record(
             appContext,
             type = "NOTIFICATION_ATTEMPT",
@@ -64,10 +88,7 @@ object NotificationHelper {
             ruleId = rule.id,
             zoneId = zone.id,
             notificationId = notificationId,
-            details = JSONObject()
-                .put("channel_id", CHANNEL_ID)
-                .put("test", test)
-                .put("notifications_enabled", manager.areNotificationsEnabled()),
+            details = attemptDetails,
         )
 
         val blocker = notificationBlocker(appContext, manager)
@@ -123,7 +144,7 @@ object NotificationHelper {
             .setCategory(Notification.CATEGORY_REMINDER)
             .setPriority(Notification.PRIORITY_HIGH)
             .setVisibility(Notification.VISIBILITY_PRIVATE)
-            .setWhen(now)
+            .setWhen(attemptAt)
             .setShowWhen(true)
             .setLocalOnly(true)
             .build()
@@ -133,9 +154,20 @@ object NotificationHelper {
             val activeConfirmed = runCatching {
                 manager.activeNotifications.any { it.id == notificationId }
             }.getOrDefault(false)
-            audit.markNotificationPosted(notificationId, now, activeConfirmed)
+            val postedAt = System.currentTimeMillis()
+            audit.markNotificationPosted(notificationId, postedAt, activeConfirmed)
 
             val state = if (activeConfirmed) "ACTIVE_CONFIRMED" else "POSTED_UNCONFIRMED"
+            val postedDetails = JSONObject()
+                .put("test", test)
+                .put("channel_id", CHANNEL_ID)
+                .put("channel_importance", manager.getNotificationChannel(CHANNEL_ID)?.importance)
+            LatencyMetrics.nonNegativeDelta(attemptAt, postedAt)?.let {
+                postedDetails.put("notification_attempt_to_posted_ms", it)
+            }
+            LatencyMetrics.nonNegativeDelta(triggerReceivedAtEpochMs, postedAt)?.let {
+                postedDetails.put("geofence_receiver_to_notification_posted_ms", it)
+            }
             EventLog.record(
                 appContext,
                 type = if (activeConfirmed) {
@@ -153,9 +185,7 @@ object NotificationHelper {
                 ruleId = rule.id,
                 zoneId = zone.id,
                 notificationId = notificationId,
-                details = JSONObject()
-                    .put("test", test)
-                    .put("channel_importance", manager.getNotificationChannel(CHANNEL_ID)?.importance),
+                details = postedDetails,
             )
             NotificationOutcome(true, notificationId, state, "Notification posted")
         } catch (error: Exception) {
