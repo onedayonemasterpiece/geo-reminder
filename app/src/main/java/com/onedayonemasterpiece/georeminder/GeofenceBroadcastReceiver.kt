@@ -13,6 +13,7 @@ import java.time.Instant
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION_TRANSITION) return
+        val receiverReceivedAtEpochMs = System.currentTimeMillis()
         val pending = goAsync()
         val appContext = context.applicationContext
         val event = GeofencingEvent.fromIntent(intent)
@@ -43,7 +44,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
         AppExecutors.io.execute {
             try {
-                processEvent(appContext, event, pending)
+                processEvent(appContext, event, pending, receiverReceivedAtEpochMs)
             } catch (error: Exception) {
                 EventLog.record(
                     appContext,
@@ -61,6 +62,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         context: Context,
         event: GeofencingEvent,
         pending: PendingResult,
+        receiverReceivedAtEpochMs: Long,
     ) {
         val transition = event.geofenceTransition
         val transitionName = transitionName(transition)
@@ -83,6 +85,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             .put("transition_code", transition)
             .put("transition", transitionName)
             .put("trigger_count", triggering.size)
+            .put("receiver_received_at_ms", receiverReceivedAtEpochMs)
         if (location != null) {
             eventDetails.put(
                 "triggering_location",
@@ -93,6 +96,9 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     .put("provider", location.provider)
                     .put("time_ms", location.time),
             )
+            LatencyMetrics.nonNegativeDelta(location.time, receiverReceivedAtEpochMs)?.let {
+                eventDetails.put("triggering_location_to_receiver_ms", it)
+            }
         }
 
         EventLog.record(
@@ -161,7 +167,10 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 ruleId = rule.id,
                 zoneId = zone.id,
                 transition = transitionName,
-                details = JSONObject().put("request_id", geofence.requestId),
+                details = JSONObject()
+                    .put("request_id", geofence.requestId)
+                    .put("radius_m", zone.radiusMeters)
+                    .put("responsiveness_ms", rule.responsivenessMs),
             )
 
             if (rule.transition.name != transitionName) {
@@ -214,7 +223,13 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 transition = transitionName,
             )
 
-            val outcome = NotificationHelper.show(context, rule, zone, test = false)
+            val outcome = NotificationHelper.show(
+                context = context,
+                rule = rule,
+                zone = zone,
+                test = false,
+                triggerReceivedAtEpochMs = receiverReceivedAtEpochMs,
+            )
             if (!outcome.posted || outcome.notificationId == null) {
                 EventLog.record(
                     context,
