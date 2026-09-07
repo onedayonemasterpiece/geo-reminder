@@ -52,9 +52,11 @@ object Diagnostics {
         val activityManager = appContext.getSystemService(ActivityManager::class.java)
         val powerManager = appContext.getSystemService(PowerManager::class.java)
         val registration = audit.registrationSnapshot()
+        NotificationHelper.ensureChannel(appContext)
         val reconciliation = NotificationHelper.reconcileWithSystem(appContext, recordEvent = false)
         val counts = audit.counts()
         val channel = notificationManager.getNotificationChannel(NotificationHelper.CHANNEL_ID)
+        val legacyChannel = notificationManager.getNotificationChannel(NotificationHelper.LEGACY_CHANNEL_ID)
         val activeNotificationIds = runCatching {
             notificationManager.activeNotifications.map { it.id }.sorted()
         }.getOrDefault(emptyList())
@@ -92,7 +94,16 @@ object Diagnostics {
                 },
             )
             appendLine("notifications_enabled=${notificationManager.areNotificationsEnabled()}")
+            appendLine("notification_channel_id=${NotificationHelper.CHANNEL_ID}")
             appendLine("notification_channel=${channel?.importance?.let(::importanceName) ?: "MISSING"}")
+            appendLine("notification_channel_sound=${channel?.sound?.toString() ?: "SILENT_OR_MISSING"}")
+            appendLine("notification_channel_vibration=${channel?.shouldVibrate() ?: false}")
+            appendLine("notification_channel_bypass_dnd=${channel?.canBypassDnd() ?: false}")
+            appendLine("notification_channel_audio_usage=${channel?.audioAttributes?.usage ?: "NONE"}")
+            appendLine(
+                "legacy_notification_channel=" +
+                    (legacyChannel?.importance?.let(::importanceName) ?: "ABSENT"),
+            )
             appendLine("background_restricted=${activityManager.isBackgroundRestricted}")
             appendLine(
                 "ignoring_battery_optimizations=" +
@@ -109,6 +120,11 @@ object Diagnostics {
                 appendLine("zones=${rules.zoneCount}")
                 appendLine("completed_once_rules=${audit.completedCount(rules)}")
                 appendLine("rules_sha256=${ruleStore.currentSha256() ?: "NONE"}")
+                appendLine(
+                    "responsiveness_ms=" + rules.rules.joinToString(",") {
+                        "${it.id}:${it.responsivenessMs}"
+                    },
+                )
             }
             appendLine("latest_import_at=${format(latestImport?.importedAtEpochMs)}")
             appendLine("latest_import_success=${latestImport?.success ?: "UNKNOWN"}")
@@ -138,6 +154,7 @@ object Diagnostics {
             appendLine("reconciliation_checked=${reconciliation.checked}")
             appendLine("reconciliation_active_confirmed=${reconciliation.activeConfirmed}")
             appendLine("reconciliation_no_longer_active=${reconciliation.noLongerActive}")
+            appendLine("latency_fields=triggering_location_to_receiver_ms,geofence_receiver_to_notification_attempt_ms,notification_attempt_to_posted_ms,geofence_receiver_to_notification_posted_ms")
             val latest = audit.latestEvent()
             appendLine(
                 "latest_event=" + if (latest == null) {
