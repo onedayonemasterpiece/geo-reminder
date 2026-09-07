@@ -13,6 +13,9 @@ internal fun MainActivity.buildDiagnosticsScreen(): View {
     ))
     column.addView(actionButton("Обновить диагностику") { showCurrentScreen() })
     column.addView(actionButton("Перерегистрировать геозоны") { reregister("diagnostics-ui") })
+    column.addView(actionButton("Настроить звук геонапоминаний") {
+        startActivity(NotificationHelper.channelSettingsIntent(this))
+    })
     column.addView(actionButton("Открыть настройки приложения") { openAppSettings() })
     column.addView(actionButton("Открыть настройки геолокации") {
         startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
